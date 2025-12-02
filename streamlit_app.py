@@ -56,9 +56,11 @@ def load_model(_spark, version="v1"):
         st.error(f"Error loading model: {str(e)}")
         return None, None
 
-def predict_churn(spark, model, customer_data):
+def predict_churn(spark, model, customer_data, version="v1"):
     """Make churn prediction for a customer"""
     try:
+        from pyspark.sql.functions import when, lit
+        
         # Create DataFrame from customer data
         schema = StructType([
             StructField("CreditScore", IntegerType(), True),
@@ -76,13 +78,37 @@ def predict_churn(spark, model, customer_data):
         # Create Spark DataFrame
         df = spark.createDataFrame([customer_data], schema=schema)
         
-        # Add engineered features
+        # Add V1 engineered features (common to both versions)
         df = df.withColumn("AgeGroup", 
-            col("Age").cast("string"))  # Simplified for demo
-        df = df.withColumn("BalanceCategory", 
-            col("Balance").cast("string"))  # Simplified for demo
-        df = df.withColumn("CreditScoreCategory", 
-            col("CreditScore").cast("string"))  # Simplified for demo
+            when(col("Age") < 30, "Young")
+            .when((col("Age") >= 30) & (col("Age") < 50), "Middle")
+            .otherwise("Senior"))
+        
+        df = df.withColumn("BalanceCategory",
+            when(col("Balance") == 0, "Zero")
+            .when((col("Balance") > 0) & (col("Balance") <= 50000), "Low")
+            .when((col("Balance") > 50000) & (col("Balance") <= 100000), "Medium")
+            .otherwise("High"))
+        
+        df = df.withColumn("CreditScoreCategory",
+            when(col("CreditScore") < 500, "Poor")
+            .when((col("CreditScore") >= 500) & (col("CreditScore") < 650), "Fair")
+            .when((col("CreditScore") >= 650) & (col("CreditScore") < 750), "Good")
+            .otherwise("Excellent"))
+        
+        # Add V2-specific features if needed
+        if version == "v2":
+            df = df.withColumn("TenureCategory",
+                when(col("Tenure") <= 2, "New")
+                .when((col("Tenure") > 2) & (col("Tenure") <= 5), "Regular")
+                .otherwise("Loyal"))
+            
+            # EngagementScore calculation
+            df = df.withColumn("EngagementScore",
+                (col("NumOfProducts") * 2 + 
+                 col("HasCrCard") + 
+                 col("IsActiveMember") * 2 + 
+                 when(col("Balance") > 0, 1).otherwise(0)).cast("int"))
         
         # Make prediction
         prediction = model.transform(df)
@@ -162,7 +188,7 @@ def main():
     if page == "Single Prediction":
         show_single_prediction(spark, model, version)
     elif page == "Batch Prediction":
-        show_batch_prediction(spark, model)
+        show_batch_prediction(spark, model, version)
     else:
         show_model_insights(version)
 
@@ -211,7 +237,7 @@ def show_single_prediction(spark, model, version="v1"):
         
         # Make prediction
         with st.spinner("Making prediction..."):
-            churn_prediction, probability = predict_churn(spark, model, customer_data)
+            churn_prediction, probability = predict_churn(spark, model, customer_data, version)
         
         if churn_prediction is not None:
             st.markdown("---")
@@ -269,8 +295,10 @@ def show_single_prediction(spark, model, version="v1"):
                 st.write("✓ Customer shows positive engagement - maintain regular communication")
                 st.write("✓ Consider upselling opportunities")
 
-def show_batch_prediction(spark, model):
+def show_batch_prediction(spark, model, version="v1"):
     """Batch prediction page"""
+    from pyspark.sql.functions import when, lit
+    
     st.header("📁 Batch Prediction")
     st.markdown("Upload a CSV file with customer data for batch predictions")
     
@@ -288,6 +316,38 @@ def show_batch_prediction(spark, model):
             with st.spinner("Processing predictions..."):
                 # Convert to Spark DataFrame
                 df_spark = spark.createDataFrame(df_pandas)
+                
+                # Add V1 engineered features (common to both versions)
+                df_spark = df_spark.withColumn("AgeGroup", 
+                    when(col("Age") < 30, "Young")
+                    .when((col("Age") >= 30) & (col("Age") < 50), "Middle")
+                    .otherwise("Senior"))
+                
+                df_spark = df_spark.withColumn("BalanceCategory",
+                    when(col("Balance") == 0, "Zero")
+                    .when((col("Balance") > 0) & (col("Balance") <= 50000), "Low")
+                    .when((col("Balance") > 50000) & (col("Balance") <= 100000), "Medium")
+                    .otherwise("High"))
+                
+                df_spark = df_spark.withColumn("CreditScoreCategory",
+                    when(col("CreditScore") < 500, "Poor")
+                    .when((col("CreditScore") >= 500) & (col("CreditScore") < 650), "Fair")
+                    .when((col("CreditScore") >= 650) & (col("CreditScore") < 750), "Good")
+                    .otherwise("Excellent"))
+                
+                # Add V2-specific features if needed
+                if version == "v2":
+                    df_spark = df_spark.withColumn("TenureCategory",
+                        when(col("Tenure") <= 2, "New")
+                        .when((col("Tenure") > 2) & (col("Tenure") <= 5), "Regular")
+                        .otherwise("Loyal"))
+                    
+                    # EngagementScore calculation
+                    df_spark = df_spark.withColumn("EngagementScore",
+                        (col("NumOfProducts") * 2 + 
+                         col("HasCrCard") + 
+                         col("IsActiveMember") * 2 + 
+                         when(col("Balance") > 0, 1).otherwise(0)).cast("int"))
                 
                 # Make predictions
                 predictions = model.transform(df_spark)

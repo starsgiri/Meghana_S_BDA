@@ -53,7 +53,17 @@ def main():
     # ============================================================================
     
     print("\n=== Missing Values Check ===")
-    df.select([count(when(isnan(c) | col(c).isNull(), c)).alias(c) for c in df.columns]).show()
+    # Only check isnan for numeric columns
+    numeric_cols = [c for c in df.columns if df.schema[c].dataType.simpleString() in ['int', 'bigint', 'double', 'float']]
+    string_cols = [c for c in df.columns if c not in numeric_cols]
+    
+    missing_counts = []
+    for c in numeric_cols:
+        missing_counts.append(count(when(isnan(c) | col(c).isNull(), c)).alias(c))
+    for c in string_cols:
+        missing_counts.append(count(when(col(c).isNull(), c)).alias(c))
+    
+    df.select(missing_counts).show()
     
     # ============================================================================
     # STEP 5: Analyze Target Variable (Churn)
