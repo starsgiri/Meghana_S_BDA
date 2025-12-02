@@ -1,0 +1,26 @@
+# Commands to Download Bank Customer Churn Dataset from Kaggle
+
+# Step 1: Install Kaggle API (if not already installed)
+pip install kaggle
+
+# Step 2: Set up Kaggle API credentials
+# Download your kaggle.json from https://www.kaggle.com/settings/account
+# Place it in ~/.kaggle/ directory
+mkdir -p ~/.kaggle
+cp kaggle.json ~/.kaggle/
+chmod 600 ~/.kaggle/kaggle.json
+
+# Step 3: Search for bank churn datasets on Kaggle
+kaggle datasets list -s "bank customer churn"
+
+# Step 4: Download the dataset (using a popular bank churn dataset)
+# Option 1: Using the popular "Bank Customer Churn Prediction" dataset
+kaggle datasets download -d shantanudhakadd/bank-customer-churn-prediction -p ./dataset --unzip
+
+# Option 2: Alternative dataset if Option 1 doesn't work
+# kaggle datasets download -d mathchi/churn-for-bank-customers -p ./dataset --unzip
+
+# Step 5: Verify the downloaded files
+ls -lh ./dataset/
+
+# Note: Make sure you have accepted the competition/dataset rules on Kaggle website before downloading
