@@ -11,7 +11,8 @@ import os
 st.set_page_config(
     page_title="Bank Customer Churn Prediction",
     page_icon="🏦",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Initialize Spark Session
@@ -25,21 +26,32 @@ def init_spark():
     return spark
 
 @st.cache_resource
-def load_model(_spark):
-    """Load the trained model"""
+def load_model(_spark, version="v1"):
+    """Load the trained model - supports both v1 and v2"""
     try:
-        model_path = "models/best_churn_model"
-        if os.path.exists(model_path):
-            model = PipelineModel.load(model_path)
-            return model, "best_churn_model"
-        else:
-            # Try loading Random Forest model as alternative
-            model_path = "models/random_forest_model"
+        if version == "v2":
+            model_path = "models/best_churn_model_v2"
             if os.path.exists(model_path):
                 model = PipelineModel.load(model_path)
-                return model, "random_forest_model"
+                return model, "best_churn_model_v2"
             else:
-                return None, None
+                # Fallback to v1
+                st.warning("V2 model not found, loading V1 model...")
+                version = "v1"
+        
+        if version == "v1":
+            model_path = "models/best_churn_model"
+            if os.path.exists(model_path):
+                model = PipelineModel.load(model_path)
+                return model, "best_churn_model_v1"
+            else:
+                # Try loading Random Forest model as alternative
+                model_path = "models/random_forest_model"
+                if os.path.exists(model_path):
+                    model = PipelineModel.load(model_path)
+                    return model, "random_forest_model_v1"
+                else:
+                    return None, None
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
         return None, None
@@ -90,33 +102,71 @@ def main():
     # Header
     st.title("🏦 Bank Customer Churn Prediction System")
     st.markdown("### Predict customer churn using PySpark MLlib")
+    
+    # Model version selector in header
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        model_version = st.selectbox(
+            "Model Version",
+            ["v1 (10K)", "v2 (500K)"],
+            index=1 if os.path.exists("models/best_churn_model_v2") else 0,
+            help="v1: Trained on 10,000 records\nv2: Trained on 500,000 records"
+        )
+    
+    version = "v2" if "v2" in model_version else "v1"
+    
     st.markdown("---")
     
     # Initialize Spark
     spark = init_spark()
     
     # Load model
-    model, model_name = load_model(spark)
+    model, model_name = load_model(spark, version)
     
     if model is None:
         st.error("❌ Model not found! Please train the model first using the PySpark training script.")
         st.info("Run the commands in 'pyspark_model_training.txt' to train the model.")
         return
     
-    st.success(f"✅ Model loaded successfully: {model_name}")
+    # Display model info
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.success(f"✅ Model: {model_name}")
+    with col2:
+        if version == "v2":
+            st.info("📊 Training Size: 500,000 records")
+        else:
+            st.info("📊 Training Size: 10,000 records")
+    with col3:
+        # Try to load and display model metadata
+        metadata_file = f"models/model_{version}_metadata.txt"
+        if os.path.exists(metadata_file):
+            st.info(f"📅 Version: {version.upper()}")
     
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.radio("Go to", ["Single Prediction", "Batch Prediction", "Model Insights"])
     
+    # Display version info in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"### Current Model: {version.upper()}")
+    if version == "v2":
+        st.sidebar.markdown("🚀 Large dataset model")
+        st.sidebar.markdown("- 500,000 training records")
+        st.sidebar.markdown("- Enhanced features")
+        st.sidebar.markdown("- Better accuracy")
+    else:
+        st.sidebar.markdown("📊 Standard model")
+        st.sidebar.markdown("- 10,000 training records")
+    
     if page == "Single Prediction":
-        show_single_prediction(spark, model)
+        show_single_prediction(spark, model, version)
     elif page == "Batch Prediction":
         show_batch_prediction(spark, model)
     else:
-        show_model_insights()
+        show_model_insights(version)
 
-def show_single_prediction(spark, model):
+def show_single_prediction(spark, model, version="v1"):
     """Single customer prediction page"""
     st.header("🔍 Single Customer Prediction")
     st.markdown("Enter customer details to predict churn probability")
@@ -274,9 +324,24 @@ def show_batch_prediction(spark, model):
                     mime="text/csv"
                 )
 
-def show_model_insights():
+def show_model_insights(version="v1"):
     """Model insights page"""
     st.header("📈 Model Insights")
+    
+    # Show version-specific information
+    if version == "v2":
+        st.info("📊 Displaying insights for Model V2 (500,000 records)")
+    else:
+        st.info("📊 Displaying insights for Model V1 (10,000 records)")
+    
+    # Try to load model metadata
+    metadata_file = f"models/model_{version}_metadata.txt"
+    if os.path.exists(metadata_file):
+        st.subheader("Model Metadata")
+        with open(metadata_file, "r") as f:
+            metadata_content = f.read()
+        st.code(metadata_content, language="text")
+        st.markdown("---")
     
     st.markdown("""
     ### Model Performance
